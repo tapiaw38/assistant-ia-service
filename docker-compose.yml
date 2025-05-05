@@ -1,0 +1,109 @@
+version: "3.8"
+
+services:
+  traefik:
+    image: traefik:v2.10
+    command:
+      - --api.insecure=true
+      - --providers.docker=true
+      - --entrypoints.web.address=:80
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - app-net
+
+  auth-postgres-db:
+    container_name: "auth-postgres-db"
+    image: postgres:14-alpine
+    ports:
+      - ${PG_DB_PORT}:5432
+    environment:
+      - POSTGRES_USER=${PG_DB_USER}
+      - POSTGRES_PASSWORD=${PG_DB_PASSWORD}
+      - POSTGRES_DB=${PG_DB_NAME}
+      - DB_USER=${PG_DB_USER}
+      - DB_PASSWORD=${PG_DB_PASSWORD}
+      - DB_NAME=${PG_DB_NAME}
+    volumes:
+      - ./init-database.sh:/docker-entrypoint-initdb.d/init-database.sh
+    networks:
+      - app-net
+
+  auth-api-be:
+    build: ./auth-api-be
+    container_name: auth-api-be
+    env_file:
+      - ./auth-api-be/.env
+    depends_on:
+      - auth-postgres-db
+      - rabbitmq
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.auth-api.rule=Host(`auth.localhost`)"
+      - "traefik.http.routers.auth-api.entrypoints=web"
+      - "traefik.http.services.auth-api.loadbalancer.server.port=8080"
+    networks:
+      - app-net
+    ports:
+      - "8082:8082"
+
+  assistant-ia-db:
+    container_name: "assistant-ia-db"
+    image: mongo:6.0
+    restart: on-failure
+    ports:
+      - ${MG_DB_PORT}:27017
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MG_DB_USER}
+      - MONGO_INITDB_ROOT_PASSWORD=${MG_DB_PASSWORD}
+      - MONGO_INITDB_DATABASE=${MG_DB_NAME}
+    volumes:
+      - db_data:/data/db
+      - ./init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js
+    networks:
+      - app-net
+
+  assistant-ia-api:
+    build: ./assistant-ia-api
+    container_name: assistant-ia-api
+    depends_on:
+      - assistant-ia-db
+    env_file:
+      - ./assistant-ia-api/.env
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - ./assistant-ia-api:/app
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.assistant-api.rule=Host(`assistant.localhost`)"
+      - "traefik.http.routers.assistant-api.entrypoints=web"
+      - "traefik.http.services.assistant-api.loadbalancer.server.port=8000"
+    networks:
+      - app-net
+    ports:
+      - "8000:8000"
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "15672:15672"
+      - "5672:5672"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.rabbitmq.rule=Host(`rabbitmq.localhost`)"
+      - "traefik.http.routers.rabbitmq.entrypoints=web"
+      - "traefik.http.services.rabbitmq.loadbalancer.server.port=15672"
+    networks:
+      - app-net
+
+volumes:
+  db_data:
+    driver: local
+
+networks:
+  app-net:
+    driver: bridge
