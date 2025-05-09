@@ -42,7 +42,7 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.auth-api.rule=Host(`auth.localhost`)"
       - "traefik.http.routers.auth-api.entrypoints=web"
-      - "traefik.http.services.auth-api.loadbalancer.server.port=8080"
+      - "traefik.http.services.auth-api.loadbalancer.server.port=8082"
     networks:
       - app-net
     ports:
