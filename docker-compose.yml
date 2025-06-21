@@ -1,17 +1,34 @@
 services:
   traefik:
     image: traefik:v2.10
+    container_name: traefik
     command:
-      - --api.insecure=true
+      - --api.dashboard=true
+      - --api.insecure=false
       - --providers.docker=true
       - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --certificatesresolvers.le.acme.httpchallenge=true
+      - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
+      - --certificatesresolvers.le.acme.email=admin@seely.com.ar
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
     ports:
       - "80:80"
+      - "443:443"
       - "8080:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./letsencrypt:/letsencrypt
     networks:
       - app-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.seely.com.ar`)"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.tls.certresolver=le"
 
   auth-postgres-db:
     container_name: "auth-postgres-db"
@@ -40,8 +57,9 @@ services:
       - rabbitmq
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.auth-api.rule=Host(`auth.localhost`)"
-      - "traefik.http.routers.auth-api.entrypoints=web"
+      - "traefik.http.routers.auth-api.rule=Host(`auth.seely.com.ar`)"
+      - "traefik.http.routers.auth-api.entrypoints=websecure"
+      - "traefik.http.routers.auth-api.tls.certresolver=le"
       - "traefik.http.services.auth-api.loadbalancer.server.port=8082"
     networks:
       - app-net
@@ -61,6 +79,8 @@ services:
     volumes:
       - db_data:/data/db
       - ./init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js
+      - ./mongod.conf:/etc/mongod.conf
+    command: ["mongod", "--config", "/etc/mongod.conf"]
     networks:
       - app-net
 
@@ -77,8 +97,9 @@ services:
       - ./assistant-ia-api:/app
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.assistant-api.rule=Host(`assistant.localhost`)"
-      - "traefik.http.routers.assistant-api.entrypoints=web"
+      - "traefik.http.routers.assistant-api.rule=Host(`assistant.seely.com.ar`)"
+      - "traefik.http.routers.assistant-api.entrypoints=websecure"
+      - "traefik.http.routers.assistant-api.tls.certresolver=le"
       - "traefik.http.services.assistant-api.loadbalancer.server.port=8000"
     networks:
       - app-net
@@ -87,13 +108,15 @@ services:
 
   rabbitmq:
     image: rabbitmq:3-management
+    container_name: rabbitmq
     ports:
       - "15672:15672"
       - "5672:5672"
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.rabbitmq.rule=Host(`rabbitmq.localhost`)"
-      - "traefik.http.routers.rabbitmq.entrypoints=web"
+      - "traefik.http.routers.rabbitmq.rule=Host(`mq.seely.com.ar`)"
+      - "traefik.http.routers.rabbitmq.entrypoints=websecure"
+      - "traefik.http.routers.rabbitmq.tls.certresolver=le"
       - "traefik.http.services.rabbitmq.loadbalancer.server.port=15672"
     networks:
       - app-net
